@@ -1,5 +1,5 @@
 CC = g++
-CFLAGS = -W -Wall -O3 -std=c++11
+CFLAGS = -W -Wall -std=c++11
 LIBS = -lX11 -lXtst
 PROG = space2super
 DEBUG_PROG = $(PROG).debug
@@ -30,7 +30,7 @@ gdb: $(DEBUG_PROG)
 	gdb -ex 'break main' -ex 'run' --args $(DEBUG_PROG)
 
 $(PROG): $(SRC) Makefile
-	$(CC) -DNDEBUG -o $@ $(SRC) $(CFLAGS) $(LIBS)
+	$(CC) -O3 -DNDEBUG -o $@ $(SRC) $(CFLAGS) $(LIBS)
 
 $(DEBUG_PROG): $(SRC) Makefile
 	$(CC) -g -o $@ $(SRC) $(CFLAGS) $(LIBS)
