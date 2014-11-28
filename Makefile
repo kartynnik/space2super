@@ -3,6 +3,7 @@ CFLAGS = -W -Wall -O3 -std=c++11
 LIBS = -lX11 -lXtst
 PROG = space2super
 DEBUG_PROG = $(PROG).debug
+DEPS = libx11-dev libxtst-dev
 
 SRC = main.cpp
 
@@ -14,7 +15,10 @@ options:
 	@echo "CFLAGS = $(CFLAGS)"
 
 deps:
-	sudo apt-get install libx11-dev libxtst-dev
+	sudo apt-get install -y $(DEPS)
+
+undeps:
+	sudo apt-get remove -y $(DEPS)
 
 run: $(PROG)
 	./$(PROG)
