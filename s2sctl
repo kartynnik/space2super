@@ -1,0 +1,32 @@
+#! /bin/sh
+logfile="$HOME/.space2super"
+
+start() {
+    newmap=$(xmodmap -pke | grep -E "^keycode[[:blank:]]*?65" | perl -pe "s/ space/ Super_L/g")
+
+    xmodmap -e "$newmap"
+    xmodmap -e "keycode 255 = space VoidSymbol VoidSymbol VoidSymbol VoidSymbol"
+    nohup "${0%/*}/space2super" >> "$logfile" 2>&1 &
+    echo "Space2Super is now active (log file: $logfile)"
+}
+
+stop() {
+    newmap=$(xmodmap -pke | grep -E "^keycode[[:blank:]]*?65" | perl -pe "s/ Super_L/ space/g")
+    xmodmap -e "$newmap"
+    xmodmap -e "keycode 255 ="
+    pkill -TERM space2super
+}
+
+case "$1" in
+    start)
+        echo "Starting Space2Super..."
+        start
+        ;;
+    stop)
+        echo "Stopping Space2Super..."
+        stop
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}" >&2
+        ;;
+esac

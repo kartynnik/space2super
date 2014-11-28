@@ -1,33 +1,38 @@
 CC = g++
-CFLAGS = -W -Wall -O2
+CFLAGS = -W -Wall -O3 -std=c++11
 LIBS = -lX11 -lXtst
-PREFIX = /usr
-BINPREFIX = $(PREFIX)/bin
+PROG = space2super
+DEBUG_PROG = $(PROG).debug
 
-SRC = Space2Ctrl.cpp
+SRC = main.cpp
 
-all: options s2c
+all: options $(PROG)
 
 options:
-	@echo "Space2Ctrl build options:"
+	@echo "$(PROG) build options:"
 	@echo "CC = $(CC)"
 	@echo "CFLAGS = $(CFLAGS)"
-	@echo "PREFIX = $(PREFIX)"
 
-s2c: $(SRC) Makefile
-	$(CC) -o $@ $(SRC) $(CFLAGS) $(LIBS)
+deps:
+	sudo apt-get install libx11-dev libxtst-dev
+
+run: $(PROG)
+	./$(PROG)
+
+debug: $(DEBUG_PROG)
+	./$(DEBUG_PROG)
+
+gdb: $(DEBUG_PROG)
+	gdb -ex 'break main' -ex 'run' --args $(DEBUG_PROG)
+
+$(PROG): $(SRC) Makefile
+	$(CC) -DNDEBUG -o $@ $(SRC) $(CFLAGS) $(LIBS)
+
+$(DEBUG_PROG): $(SRC) Makefile
+	$(CC) -g -o $@ $(SRC) $(CFLAGS) $(LIBS)
 
 clean:
-	@echo "removing Space2Ctrl"
-	rm -f Space2Ctrl
+	@echo "removing $(PROG) and $(DEBUG_PROG)"
+	rm -f $(PROG) $(DEBUG_PROG)
 
-install: all
-	@echo "installing to $(DESTDIR)$(BINPREFIX)"
-	@install -D -m 755 s2c $(DESTDIR)$(BINPREFIX)/s2c
-	@install -D -m 755 s2cctl $(DESTDIR)$(BINPREFIX)/s2cctl
-
-uninstall:
-	@echo "removing from $(DESTDIR)$(BINPREFIX)"
-	@rm -f $(DESTDIR)$(BINPREFIX)/{s2c,s2cctl}
-
-.PHONY: all options clean install uninstall
+.PHONY: all options clean
