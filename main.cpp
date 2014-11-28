@@ -162,7 +162,7 @@ private:
                     }
                 } else if (c == XKeysymToKeycode(userData->ctrlDisplay, XK_Shift_L) ||
                            c == XKeysymToKeycode(userData->ctrlDisplay, XK_Shift_R) ||
-                           c == XKeysymToKeycode(userData->ctrlDisplay, XK_Control_R) ||
+                           c == XKeysymToKeycode(userData->ctrlDisplay, XK_Control_L) ||
                            c == XKeysymToKeycode(userData->ctrlDisplay, XK_Control_R) ||
                            c == ALT)
                 {
@@ -170,7 +170,7 @@ private:
                     // TODO: Find a better way to get those modifiers!!!
                     modifier_down = true;
                 } else {
-                    LOG("        Another");
+                    LOG("        Another (" << c << ")");
                     if (space_down) {
                         key_combo = true;
                     } else {
@@ -206,7 +206,7 @@ private:
                     }
                 } else if (c == XKeysymToKeycode(userData->ctrlDisplay, XK_Shift_L) ||
                            c == XKeysymToKeycode(userData->ctrlDisplay, XK_Shift_R) ||
-                           c == XKeysymToKeycode(userData->ctrlDisplay, XK_Control_R) ||
+                           c == XKeysymToKeycode(userData->ctrlDisplay, XK_Control_L) ||
                            c == XKeysymToKeycode(userData->ctrlDisplay, XK_Control_R) ||
                            c == ALT)
                 {
@@ -285,18 +285,18 @@ public:
 };
 
 void stop(int param) {
-    if (param == SIGTERM) {
-        std::clog << "-- Caught a SIGTERM --" << std::endl;
+    if (param == SIGINT) {
+        // std::clog << "-- Stopping Space2Super --" << std::endl;
     }
-    exit(1);
+    exit(EXIT_SUCCESS);
 }
 
 int main() {
-    signal(SIGTERM, stop);
+    signal(SIGINT, stop);
 
     Space2Super space2super;
 
-    std::clog << "-- Starting Space2Super --" << std::endl;
+    // std::clog << "-- Starting Space2Super --" << std::endl;
     if (space2super.connect(":0")) {
         space2super.start();
     }
