@@ -2,9 +2,6 @@
      Compile with:
      g++ -std=c++11 -o space2super main.cpp -W -Wall -L/usr/X11R6/lib -lX11 -lXtst
 
-     To install libx11:
-     in Ubuntu: sudo apt-get install libx11-dev
-
      To install libXTst:
      in Ubuntu: sudo apt-get install libxtst-dev
 

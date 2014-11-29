@@ -3,7 +3,7 @@ CFLAGS = -W -Wall -std=c++11
 LIBS = -lX11 -lXtst
 PROG = space2super
 DEBUG_PROG = $(PROG).debug
-DEPS = libx11-dev libxtst-dev
+DEPS = libxtst-dev
 
 SRC = main.cpp
 
