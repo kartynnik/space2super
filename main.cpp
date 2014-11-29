@@ -105,7 +105,7 @@ private:
         return ((t1.tv_sec - t2.tv_sec) * 1000000 + (t1.tv_usec - t2.tv_usec)) / 1000;
     }
 
-    // Called from Xserver when new event occurs.
+    // Called from the X server when a new event occurs
     static void eventCallback(XPointer priv, XRecordInterceptData *hook) {
         if (hook->category != XRecordFromServer) {
             XRecordFreeData(hook);
@@ -154,7 +154,7 @@ private:
                 } else if (c == XKeysymToKeycode(userData->ctrlDisplay, XK_Super_L) ||
                            c == XKeysymToKeycode(userData->ctrlDisplay, XK_Super_R))
                 {
-                    LOG("        Super_{L||R}");
+                    LOG("        Super_{L|R}");
                     // Super_pressed
                     if (space_down) { // space-Super sequence
                         XTestFakeKeyEvent(userData->ctrlDisplay, REMAPPED_KEYCODE, True, CurrentTime);
@@ -199,7 +199,7 @@ private:
                 } else if (c == XKeysymToKeycode(userData->ctrlDisplay, XK_Super_L) ||
                            c == XKeysymToKeycode(userData->ctrlDisplay, XK_Super_R))
                 {
-                    LOG("        Super_{L||R}");
+                    LOG("        Super_{L|R}");
                     // Super release
                     if (space_down) {
                         key_combo = true;
