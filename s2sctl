@@ -26,7 +26,11 @@ case "$1" in
         echo "Stopping Space2Super..."
         stop
         ;;
+    restart)
+        $0 stop
+        $0 start
+        ;;
     *)
-        echo "Usage: $0 {start|stop}" >&2
+        echo "Usage: $0 {start|stop|restart}" >&2
         ;;
 esac
