@@ -1,12 +1,15 @@
 #! /bin/sh
 logfile="$HOME/.space2super"
+program="${0%/*}/space2super"
 
 start() {
-    newmap=$(xmodmap -pke | grep -E "^keycode[[:blank:]]*?65" | perl -pe "s/ space/ Super_L/g")
+    pgrep --full --count "$program" > /dev/null && { echo "Space2Super is already active" >&2; return; }
 
+    newmap=$(xmodmap -pke | grep -E "^keycode[[:blank:]]*?65" | perl -pe "s/ space/ Super_L/g")
     xmodmap -e "$newmap"
     xmodmap -e "keycode 255 = space space space space space"
-    nohup "${0%/*}/space2super" >> "$logfile" 2>&1 &
+
+    nohup "$program" >> "$logfile" 2>&1 &
     echo "Space2Super is now active (log file: $logfile)"
 }
 
@@ -14,6 +17,7 @@ stop() {
     newmap=$(xmodmap -pke | grep -E "^keycode[[:blank:]]*?65" | perl -pe "s/ Super_L/ space/g")
     xmodmap -e "$newmap"
     xmodmap -e "keycode 255 ="
+
     pkill -INT space2super
 }
 

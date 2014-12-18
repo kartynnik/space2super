@@ -1,14 +1,14 @@
-# Space 2 Super
+# Space2Super
 
-This little hack for X turns the spacebar key into another Super key when used in combination.
+This little hack for X turns the spacebar key into an another Super key when used in combination.
 When used alone, it behaves like the ordinary space bar on the key release event.
 Especially useful with XMonad, Awesome WM and the like.
 
 ## Prerequisites:
-* Install X11 and XTEST development packages. On Debian GNU/Linux derivatives:
+* Install the XTEST development package. On Debian GNU/Linux derivatives:
 
 ```bash
-sudo apt-get install libx11-dev libxtst-dev
+sudo apt-get install libxtst-dev
 ```
 or, equivalently,
 ```bash
