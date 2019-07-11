@@ -1,6 +1,6 @@
 # Space2Super
 
-This little hack for X turns the spacebar key into an another Super key when used in combination.
+This little hack for X turns the spacebar key into another Super key when used in combination.
 When used alone, it behaves like the ordinary space bar on the key release event.
 Especially useful with XMonad, Awesome WM and the like.
 
