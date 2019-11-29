@@ -1,40 +1,125 @@
 #! /bin/sh
-logfile="$HOME/.space2super"
-program="${0%/*}/space2super"
+set -e
+
+program='space2super'
+binary="$(dirname "$0")/$program"
+typed_space_timeout=500
+
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$program"
+log_file="$config_dir/$program.log"
+original_xmodmap="$config_dir/xmodmap.original"
+
+_log() {
+    echo "$@" >&2
+}
+
+_die() {
+    _log "$@"
+    exit 1
+}
+
+_check_command() {
+    checked_command=$1
+    if ! command -v "$checked_command" > /dev/null 2>&1; then
+        _die "'s2sctl' requires the '$checked_command' command to run."
+    fi
+}
+_check_command awk
+_check_command nohup
+_check_command pgrep
+_check_command pkill
+_check_command xmodmap
+
+_print_keymap_expressions() {
+    # Instructs `xmodmap` to print out the current keymap table in the form it can consume.
+    xmodmap -pke
+}
+
+_program_running() {
+    pgrep --exact --count "$program" > /dev/null 2>&1
+}
+
+_signal() {
+    _signal_id=$1
+    pkill --exact "-$_signal_id" "$program"
+}
 
 start() {
-    pgrep --full --count "$program" > /dev/null && { echo "Space2Super is already active" >&2; return; }
+    if _program_running; then
+        _die "Space2Super is already active. Use 's2sctl restart' to restart it."
+    fi
 
-    newmap=$(xmodmap -pke | grep -E "^keycode[[:blank:]]*?65" | perl -pe "s/ space/ Super_L/g")
-    xmodmap -e "$newmap"
-    xmodmap -e "keycode 255 = space space space space space"
+    _log 'Starting Space2Super...'
 
-    nohup "$program" >> "$logfile" 2>&1 &
-    echo "Space2Super is now active (log file: $logfile)"
+    mkdir -p "$config_dir"
+    _print_keymap_expressions > "$original_xmodmap"
+
+    # Choose a key code that Space2Super will synthesize instead of Space when typing a space is needed.
+    # Originally a fixed value of 255 was used, but I've seen it bound to e.g. `XF86RFKill`.
+    # Filter lines that look like `keycode ### =` with nothing to the right of `=` (3 fields only), print the ###.
+    # Prefer higher key codes over the lower ones.
+    free_key_code=$(
+        awk '/keycode / && NF == 3 { free_key_code = $2; } END { print free_key_code; }' "$original_xmodmap")
+    if [ -z "$free_key_code" ]; then
+        _die "Could not find an unmapped X11 key code (see 'xmodmap -pke')."
+    fi
+
+    # Take note of what the original space key code was.
+    original_key_code=$(grep '\<space\>' "$original_xmodmap" | awk '{ print $2; exit; }')
+    if [ -z "$original_key_code" ]; then
+        _die "Could not find any key code associated with Space (see 'xmodmap -pke')."
+    fi
+
+    # Change all the mentions of `space` to `Super_L`.
+    awk '/keycode / {
+        for (field = 1; field <= NF; ++field) {
+            if ($field == "space")
+                $field = "Super_L";
+        };
+        print;
+    }' "$original_xmodmap" | xmodmap - || _die "Replacing current 'space' mappings with 'Super_L' failed."
+
+    # Map the free key code to `space`, independent of modifiers.
+    xmodmap -e "keycode $free_key_code = space space space space" ||
+        _die "Mapping key code $free_key_code to Space failed."
+
+    nohup "$binary" "$original_key_code" "$free_key_code" "$typed_space_timeout" >> "$log_file" 2>&1 &
+    _log "Space2Super is now active (log file: $log_file)."
 }
 
 stop() {
-    newmap=$(xmodmap -pke | grep -E "^keycode[[:blank:]]*?65" | perl -pe "s/ Super_L/ space/g")
-    xmodmap -e "$newmap"
-    xmodmap -e "keycode 255 ="
+    if ! _program_running; then
+        _die 'Space2Super is not running.'
+    fi
 
-    pkill -INT space2super
+    _log 'Stopping Space2Super...'
+
+    # Restore the original key code mapping.
+    xmodmap "$original_xmodmap"
+
+    if _signal TERM; then
+        # Signalled. Wait a bit and check if it's done.
+        sleep 0.5
+        if _program_running; then
+            # Still alive.
+            _signal KILL
+            _die 'The program did not terminate gracefully, sent SIGKILL.'
+        fi
+    fi
 }
 
 case "$1" in
     start)
-        echo "Starting Space2Super..."
         start
         ;;
     stop)
-        echo "Stopping Space2Super..."
         stop
         ;;
     restart)
-        $0 stop
-        $0 start
+        "$0" stop
+        "$0" start
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart}" >&2
+        _die "Usage: $0 {start|stop|restart}"
         ;;
 esac

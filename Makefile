@@ -1,13 +1,17 @@
 CC = g++
 CFLAGS = -W -Wall -std=c++11
 LIBS = -lX11 -lXtst
-PROG = space2super
-DEBUG_PROG = $(PROG).debug
 DEPS = libxtst-dev
 
-SRC = main.cpp
+PROG = space2super
+DEBUG_PROG = $(PROG).debug
 
-all: options $(PROG)
+SRC = $(PROG).cpp
+
+# Remapped key code, timeout in milliseconds
+DEFAULT_ARGS = 65 250 600
+
+all: $(PROG)
 
 options:
 	@echo "$(PROG) build options:"
@@ -21,13 +25,13 @@ undeps:
 	sudo apt-get remove -y $(DEPS)
 
 run: $(PROG)
-	./$(PROG)
+	./$(PROG) $(DEFAULT_ARGS)
 
 debug: $(DEBUG_PROG)
-	./$(DEBUG_PROG)
+	./$(DEBUG_PROG) $(DEFAULT_ARGS)
 
 gdb: $(DEBUG_PROG)
-	gdb -ex 'break main' -ex 'run' --args $(DEBUG_PROG)
+	gdb -ex 'break main' -ex 'run' --args $(DEBUG_PROG) $(DEFAULT_ARGS)
 
 $(PROG): $(SRC) Makefile
 	$(CC) -O3 -DNDEBUG -o $@ $(SRC) $(CFLAGS) $(LIBS)
@@ -36,7 +40,7 @@ $(DEBUG_PROG): $(SRC) Makefile
 	$(CC) -g -o $@ $(SRC) $(CFLAGS) $(LIBS)
 
 clean:
-	@echo "removing $(PROG) and $(DEBUG_PROG)"
+	@echo "Removing $(PROG) and $(DEBUG_PROG)"
 	rm -f $(PROG) $(DEBUG_PROG)
 
-.PHONY: all options clean
+.PHONY: all clean debug deps gdb options run undeps
