@@ -49,7 +49,8 @@ public:
     struct InitializationError: public std::exception {};
 
 public:
-    Space2Super(int original_space_key_code, int remapped_key_code, int timeout_millisec):
+    Space2Super(int original_super_key_code, int original_space_key_code, int remapped_key_code, int timeout_millisec):
+        original_super_key_code_(original_super_key_code),
         original_space_key_code_(original_space_key_code),
         remapped_key_code_(remapped_key_code),
         timeout_millisec_(timeout_millisec)
@@ -96,6 +97,8 @@ private:
     typedef std::unique_ptr<Display, DisplayCloser> DisplayPointer;
 
 private:
+    // The key code originally mapped to the target Super key (e.g. `Super_L`).
+    BYTE original_super_key_code_;
     // The key code originally mapped to the Space key (used to detect it).
     BYTE original_space_key_code_;
     // The synthetic key code that will fire when Space is to be typed, see `s2sctl`.
@@ -166,6 +169,8 @@ private:
         LOG("  Space (synthetic) = " << static_cast<int>(remapped_key_code_));
         LOG("  Space (reported by XKeysymToKeycode) = " <<
             static_cast<int>(XKeysymToKeycode(control_display_.get(), XK_space)));
+
+        LOG("  Super (original) = " << static_cast<int>(original_super_key_code_));
 
         left_super_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Super_L);
         LOG("  Super_L = " << static_cast<int>(left_super_key_code_));
@@ -295,7 +300,8 @@ private:
 
     bool is_super(BYTE key_code) const {
         if (key_code == left_super_key_code_ ||
-            key_code == right_super_key_code_)
+            key_code == right_super_key_code_ ||
+            key_code == original_super_key_code_)
         {
             LOG("  Super_{L|R}");
             return true;
@@ -444,20 +450,21 @@ void stop(int signal_number) {
 }
 
 int main(const int argc, const char* argv[]) {
-    if (argc != 4) {
+    if (argc != 5) {
         std::cerr << "Use `" << DRIVER << "` to start/stop Space2Super" << std::endl;
         return EXIT_FAILURE;
     }
 
-    BYTE original_space_key_code = static_cast<BYTE>(atoi(argv[1]));
-    BYTE remapped_key_code = static_cast<BYTE>(atoi(argv[2]));
-    int timeout = atoi(argv[3]);
+    BYTE original_super_key_code = static_cast<BYTE>(atoi(argv[1]));
+    BYTE original_space_key_code = static_cast<BYTE>(atoi(argv[2]));
+    BYTE remapped_key_code = static_cast<BYTE>(atoi(argv[3]));
+    int timeout = atoi(argv[4]);
 
     signal(SIGINT, stop);
     signal(SIGTERM, stop);
 
     try {
-        Space2Super space2super(original_space_key_code, remapped_key_code, timeout);
+        Space2Super space2super(original_super_key_code, original_space_key_code, remapped_key_code, timeout);
         // Will loop until the destructor is called from `stop`.
         space2super.run();
     } catch (const Space2Super::InitializationError&) {

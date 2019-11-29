@@ -70,13 +70,17 @@ start() {
         _die "Could not find an unmapped X11 key code (see 'xmodmap -pke')."
     fi
 
-    # Take note of what the original space key code was.
-    original_key_code=$(grep '\<space\>' "$original_xmodmap" | awk '{ print $2; exit; }')
-    if [ -z "$original_key_code" ]; then
+    # Determine what the original Space and `Super_L` key codes were.
+    original_space_key_code=$(grep '\<space\>' "$original_xmodmap" | awk '{ print $2; exit; }')
+    if [ -z "$original_space_key_code" ]; then
         _die "Could not find any key code associated with Space (see 'xmodmap -pke')."
     fi
+    original_super_left_key_code=$(grep '\<Super_L\>' "$original_xmodmap" | awk '{ print $2; exit; }')
+    if [ -z "$original_super_left_key_code" ]; then
+        _die "Could not find any key code associated with 'Super_L' (see 'xmodmap -pke')."
+    fi
 
-    # Change all the mentions of `space` to `Super_L`.
+    # Change all the mentions of `space` to `Super_L`. Do this later so that the program learns the original `Super_L`.
     awk '/keycode / {
         for (field = 1; field <= NF; ++field) {
             if ($field == "space")
@@ -89,7 +93,13 @@ start() {
     xmodmap -e "keycode $free_key_code = space space space space" ||
         _die "Mapping key code $free_key_code to Space failed."
 
-    nohup "$binary" "$original_key_code" "$free_key_code" "$typed_space_timeout" >> "$log_file" 2>&1 &
+    nohup \
+        "$binary" \
+        "$original_super_left_key_code" \
+        "$original_space_key_code" \
+        "$free_key_code" \
+        "$typed_space_timeout" >> "$log_file" 2>&1 &
+
     _log "Space2Super is now active (log file: $log_file)."
 }
 

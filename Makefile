@@ -10,7 +10,7 @@ SRC = $(PROG).cpp
 
 # These are only example arguments used for debugging (`debug` and `run`),
 # otherwise they are dynamically provided by `s2sctl`.
-# Original Space key code, remapped Space key code, timeout in milliseconds.
+# Original `Super_L` key code, original Space key code, remapped Space key code, timeout in milliseconds.
 DEFAULT_ARGS = 65 250 600
 
 all: $(PROG)
