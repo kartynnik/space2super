@@ -311,7 +311,7 @@ private:
             key_code == left_alt_key_code_ ||
             key_code == right_alt_key_code_)
         {
-            LOG("  {Control|Shift|Alt}_{L|R}");
+            LOG("  Modifier: {Control|Shift|Alt}_{L|R}");
             return true;
         }
         return false;
@@ -331,9 +331,9 @@ private:
         } else if (is_modifier(key_code)) {
             modifier_down_ = true;
         } else {
-            LOG("  "
+            LOG("  Other: "
                 << XKeysymToString(XkbKeycodeToKeysym(control_display_.get(), key_code, /* group */ 0, /* shift */ 0))
-                << ", key code " << static_cast<int>(key_code) << " (other)"
+                << ", key code " << static_cast<int>(key_code)
             );
             space_key_combo_ = space_down_;
         }
@@ -370,16 +370,16 @@ private:
     }
 
     void handle_button_press() {
+        LOG("ButtonPress");
         space_key_combo_ = space_down_;
     }
 
     void process_event(BYTE event_type, BYTE key_code) {
-        LOG("");  // Separate event reports with blank lines.
-
         switch (event_type) {
         case KeyPress:
         case KeyRelease:
         case ButtonPress:
+            LOG("");  // Separate event reports with blank lines.
             log_state("State before");
             break;
         default:
