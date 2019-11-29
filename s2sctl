@@ -3,9 +3,15 @@ set -e
 
 program='space2super'
 binary="$(dirname "$0")/$program"
-typed_space_timeout=500
 
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$program"
+config="$config_dir/config"
+
+default_typed_space_timeout=500
+typed_space_timeout=$(
+    awk '$1 == "timeout" { print $2; }' "$config" 2> /dev/null ||
+        echo "$default_typed_space_timeout")
+
 log_file="$config_dir/$program.log"
 original_xmodmap="$config_dir/xmodmap.original"
 
