@@ -31,7 +31,6 @@ _check_command() {
     fi
 }
 _check_command awk
-_check_command nohup
 _check_command pgrep
 _check_command pkill
 _check_command xmodmap
@@ -50,6 +49,10 @@ _signal() {
     pkill --exact "-$_signal_id" "$program"
 }
 
+_restore_original_key_code_mappings() {
+    xmodmap "$original_xmodmap" || _die "Restoring the original key code mappings failed."
+}
+
 start() {
     if _program_running; then
         _die "Space2Super is already active. Use 's2sctl restart' to restart it."
@@ -60,45 +63,31 @@ start() {
     mkdir -p "$config_dir"
     _print_keymap_expressions > "$original_xmodmap"
 
-    # Choose a key code that Space2Super will synthesize instead of Space when typing a space is needed.
-    # Originally a fixed value of 255 was used, but I've seen it bound to e.g. `XF86RFKill`.
-    # Filter lines that look like `keycode ### =` with nothing to the right of `=` (3 fields only), print the ###.
-    # Prefer higher key codes over the lower ones.
-    free_key_code=$(
-        awk '/keycode / && NF == 3 { free_key_code = $2; } END { print free_key_code; }' "$original_xmodmap")
-    if [ -z "$free_key_code" ]; then
-        _die "Could not find an unmapped X11 key code (see 'xmodmap -pke')."
-    fi
-
-    # Determine what the original Space and `Super_L` key codes were.
+    # Determine what the original Space key code was (most likely 65).
     original_space_key_code=$(grep '\<space\>' "$original_xmodmap" | awk '{ print $2; exit; }')
     if [ -z "$original_space_key_code" ]; then
         _die "Could not find any key code associated with Space (see 'xmodmap -pke')."
     fi
-    original_super_left_key_code=$(grep '\<Super_L\>' "$original_xmodmap" | awk '{ print $2; exit; }')
-    if [ -z "$original_super_left_key_code" ]; then
-        _die "Could not find any key code associated with 'Super_L' (see 'xmodmap -pke')."
-    fi
 
-    # Change all the mentions of `space` to `Super_L`. Do this later so that the program learns the original `Super_L`.
-    awk '/keycode / {
-        for (field = 1; field <= NF; ++field) {
-            if ($field == "space")
-                $field = "Super_L";
-        };
-        print;
-    }' "$original_xmodmap" | xmodmap - || _die "Replacing current 'space' mappings with 'Super_L' failed."
+    # Apply all the `xmodmap` modifications at once for performance reasons.
+    {
+        # Change all mentions of `space` to `Super_L`.
+        awk '/keycode / {
+            for (field = 1; field <= NF; ++field) {
+                if ($field == "space")
+                    $field = "Super_L";
+            };
+            print;
+        }' "$original_xmodmap"
 
-    # Map the free key code to `space`, independent of modifiers.
-    xmodmap -e "keycode $free_key_code = space space space space" ||
-        _die "Mapping key code $free_key_code to Space failed."
+        # Map an unused key code to `space` when no modifiers are applied.
+        echo "keycode any = space"
+    } | xmodmap - || {
+        _restore_original_key_code_mappings
+        _die "Applying key code mappings failed."
+    }
 
-    nohup \
-        "$binary" \
-        "$original_super_left_key_code" \
-        "$original_space_key_code" \
-        "$free_key_code" \
-        "$typed_space_timeout" >> "$log_file" 2>&1 &
+    "$binary" "$original_space_key_code" "$typed_space_timeout" >> "$log_file" 2>&1 &
 
     _log "Space2Super is now active (log file: $log_file)."
 }
@@ -110,8 +99,7 @@ stop() {
 
     _log 'Stopping Space2Super...'
 
-    # Restore the original key code mapping.
-    xmodmap "$original_xmodmap"
+    _restore_original_key_code_mappings
 
     if _signal TERM; then
         # Signalled. Wait a bit and check if it's done.

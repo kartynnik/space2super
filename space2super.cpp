@@ -13,13 +13,17 @@
     Try adding the following line into the `Module` section of /etc/X11/xorg.conf:
         Load    "record"
 
-    XRecord API documentation is available at:
-        https://www.x.org/docs/Xext/recordlib.pdf
+    X Record API documentation is available at:
+        https://www.xfree86.org/current/recordlib.pdf
+    X Keyboard Extension (XKB) API documentation is available at:
+        https://www.xfree86.org/current/XKBproto.pdf
 */
 
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <type_traits>
@@ -32,6 +36,10 @@
 #include <X11/extensions/record.h>
 #include <X11/extensions/XTest.h>
 #include <X11/XKBlib.h>
+
+// Defined in Xlibint.h.
+#undef min
+#undef max
 
 
 #ifndef NDEBUG
@@ -49,10 +57,8 @@ public:
     struct InitializationError: public std::exception {};
 
 public:
-    Space2Super(int original_super_key_code, int original_space_key_code, int remapped_key_code, int timeout_millisec):
-        original_super_key_code_(original_super_key_code),
+    Space2Super(KeyCode original_space_key_code, int timeout_millisec):
         original_space_key_code_(original_space_key_code),
-        remapped_key_code_(remapped_key_code),
         timeout_millisec_(timeout_millisec)
     {
         if (! initialize()) {
@@ -92,19 +98,71 @@ private:
         }
     };
 
+    class KeyCodeSet {
+    public:
+        bool contains(const KeyCode& key_code) const {
+            return contains_[key_code];
+        }
+
+        void map(const std::function<void(KeyCode)>& process) const {
+            for_each_key_code([this, &process](KeyCode key_code) {
+                if (contains(key_code)) {
+                    process(key_code);
+                }
+            });
+        }
+
+        void populate_key_codes(const std::function<bool(KeyCode)>& is_contained) {
+            for_each_key_code([this, &is_contained](KeyCode key_code) {
+                contains_[key_code] = is_contained(key_code);
+            });
+        }
+
+        // Uses the no-modifier version of the key code mappings (1st column of `xmodmap -pke` output).
+        void populate_key_syms(Display* display, const std::function<bool(KeySym)>& is_contained) {
+            populate_key_codes([&display, &is_contained](KeyCode key_code) -> bool {
+                return is_contained(XkbKeycodeToKeysym(display, key_code, /* group */ 0, /* shift */ 0));
+            });
+        }
+
+    private:
+        static void for_each_key_code(const std::function<void(KeyCode)>& process) {
+            // Can't do this in a simple `for` loop because e.g. `key_code <= MAX_KEY_CODE_` is a tautology.
+            KeyCode key_code = MIN_KEY_CODE_;
+            do {
+                process(key_code);
+            } while (++key_code != MIN_KEY_CODE_);  // Wrapped around `MAX_KEY_CODE_`.
+        }
+
+    private:
+        typedef std::numeric_limits<KeyCode> KeyCodeLimits;
+
+    private:
+        static constexpr KeyCode MIN_KEY_CODE_ = KeyCodeLimits::min();
+        static constexpr KeyCode MAX_KEY_CODE_ = KeyCodeLimits::max();
+        static_assert(MIN_KEY_CODE_ == 0 && MAX_KEY_CODE_ == 255, "Expected `KeyCode` to be an unsigned byte");
+
+        static constexpr int KEY_CODE_COUNT_ = MAX_KEY_CODE_ + 1;
+
+    private:
+        bool contains_[KEY_CODE_COUNT_] = {};
+    };
+
+public:
+    friend std::ostream& operator <<(std::ostream&, const KeyCodeSet&);
 
 private:
     typedef std::unique_ptr<Display, DisplayCloser> DisplayPointer;
 
 private:
-    // The key code originally mapped to the target Super key (e.g. `Super_L`).
-    BYTE original_super_key_code_;
-    // The key code originally mapped to the Space key (used to detect it).
-    BYTE original_space_key_code_;
-    // The synthetic key code that will fire when Space is to be typed, see `s2sctl`.
-    BYTE remapped_key_code_;
+    // The key code that was originally mapped to the Space key (used to detect Space key presses).
+    KeyCode original_space_key_code_;
+
     // The maximum amount of milliseconds during which Space can be pressed to be typed.
     int timeout_millisec_;
+
+    // The synthetic key code that will fire when Space is to be typed, see `s2sctl`.
+    KeyCode remapped_key_code_;
 
     // See Section 1.3 of the XRecord API specification which recommends to open two connections
     // and directs which connection is typically used with each XRecord API call
@@ -116,16 +174,8 @@ private:
 
     XRecordContext record_context_;
 
-    BYTE left_super_key_code_;
-    BYTE right_super_key_code_;
-
-    // Modifiers.
-    BYTE left_control_key_code_;
-    BYTE right_control_key_code_;
-    BYTE left_shift_key_code_;
-    BYTE right_shift_key_code_;
-    BYTE left_alt_key_code_;
-    BYTE right_alt_key_code_;
+    KeyCodeSet super_keys_;
+    KeyCodeSet modifier_keys_;
 
     // Whether Space is pressed.
     bool space_down_ = false;
@@ -162,40 +212,62 @@ private:
         return true;
     }
 
-    void setup_key_codes() {
+    bool setup_key_codes() {
+        remapped_key_code_ = XKeysymToKeycode(control_display_.get(), XK_space);
+        if (remapped_key_code_ == 0) {
+            std::cerr
+                << "Couldn't map the `XK_space` KeySym back to a key code."
+                << "You may need to run `xmodmap -e 'keycode any = space'`"
+                << "(normally `s2sctl` takes care of this)."
+                << std::endl;
+            return false;
+        }
+
         LOG("Key code mapping:");
 
-        LOG("  Space (original) = " << static_cast<int>(original_space_key_code_));
-        LOG("  Space (synthetic) = " << static_cast<int>(remapped_key_code_));
-        LOG("  Space (reported by XKeysymToKeycode) = " <<
-            static_cast<int>(XKeysymToKeycode(control_display_.get(), XK_space)));
+        LOG("  Space (original): " << static_cast<int>(original_space_key_code_));
+        LOG("  Space (remapped): " << static_cast<int>(remapped_key_code_));
 
-        LOG("  Super (original) = " << static_cast<int>(original_super_key_code_));
+        super_keys_.populate_key_syms(control_display_.get(), [](KeySym key_sym) -> bool {
+            return key_sym == XK_Super_L || key_sym == XK_Super_R;
+        });
+        LOG("  Super_{L|R}: " << super_keys_);
 
-        left_super_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Super_L);
-        LOG("  Super_L = " << static_cast<int>(left_super_key_code_));
+        modifier_keys_.populate_key_syms(control_display_.get(), [](KeySym key_sym) -> bool {
+            // Do not include XKB latches/locks as those are not parts of key combinations.
+            // Do not include Super as it is treated separately in `super_keys_`.
+            switch (key_sym) {
+            case XK_Shift_L:
+            case XK_Shift_R:
+            case XK_Control_L:
+            case XK_Control_R:
+            case XK_Meta_L:
+            case XK_Meta_R:
+            case XK_Alt_L:
+            case XK_Alt_R:
+            case XK_Hyper_L:
+            case XK_Hyper_R:
+#ifdef XK_XKB_KEYS
+            case XK_ISO_Lock:
+            case XK_ISO_Level3_Shift:
+            case XK_ISO_Level5_Shift:
+            case XK_ISO_Group_Shift:
+            case XK_ISO_Next_Group:
+            case XK_ISO_Prev_Group:
+            case XK_ISO_First_Group:
+            case XK_ISO_Last_Group:
+#else
+            // `XK_ISO_Group_Shift` is an alias for `XK_Mode_switch`.
+            case XK_Mode_switch:
+#endif
+                return true;
+            default:
+                return false;
+            }
+        });
+        LOG("  Modifiers: " << modifier_keys_);
 
-        right_super_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Super_R);
-        LOG("  Super_R = " << static_cast<int>(right_super_key_code_));
-
-        // The rest are modifiers.
-        left_control_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Control_L);
-        LOG("  Control_L = " << static_cast<int>(left_control_key_code_));
-
-        right_control_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Control_R);
-        LOG("  Control_R = " << static_cast<int>(right_control_key_code_));
-
-        left_shift_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Shift_L);
-        LOG("  Shift_L = " << static_cast<int>(left_shift_key_code_));
-
-        right_shift_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Shift_R);
-        LOG("  Shift_R = " << static_cast<int>(right_shift_key_code_));
-
-        left_alt_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Alt_L);
-        LOG("  Alt_L = " << static_cast<int>(left_alt_key_code_));
-
-        right_alt_key_code_ = XKeysymToKeycode(control_display_.get(), XK_Alt_R);
-        LOG("  Alt_R = " << static_cast<int>(right_alt_key_code_));
+        return true;
     }
 
     bool open_display(DisplayPointer& display) {
@@ -221,7 +293,9 @@ private:
         // Requires Xlib to report errors as they occur.
         XSynchronize(control_display_.get(), True);
 
-        setup_key_codes();
+        if (! setup_key_codes()) {
+            return false;
+        }
 
         LOG("Space2Super initialized successfully.");
         return true;
@@ -290,7 +364,7 @@ private:
         );
     }
 
-    bool is_space(BYTE key_code) const {
+    bool is_space(KeyCode key_code) const {
         if (key_code == original_space_key_code_) {
             LOG("  Space");
             return true;
@@ -298,32 +372,23 @@ private:
         return false;
     }
 
-    bool is_super(BYTE key_code) const {
-        if (key_code == left_super_key_code_ ||
-            key_code == right_super_key_code_ ||
-            key_code == original_super_key_code_)
-        {
+    bool is_super(KeyCode key_code) const {
+        if (super_keys_.contains(key_code)) {
             LOG("  Super_{L|R}");
             return true;
         }
         return false;
     }
 
-    bool is_modifier(BYTE key_code) const {
-        if (key_code == left_control_key_code_ ||
-            key_code == right_control_key_code_ ||
-            key_code == left_shift_key_code_ ||
-            key_code == right_shift_key_code_ ||
-            key_code == left_alt_key_code_ ||
-            key_code == right_alt_key_code_)
-        {
+    bool is_modifier(KeyCode key_code) const {
+        if (modifier_keys_.contains(key_code)) {
             LOG("  Modifier: {Control|Shift|Alt}_{L|R}");
             return true;
         }
         return false;
     }
 
-    void handle_key_press(BYTE key_code) {
+    void handle_key_press(KeyCode key_code) {
         LOG("KeyPress");
 
         if (is_space(key_code)) {
@@ -345,7 +410,7 @@ private:
         }
     }
 
-    void handle_key_release(BYTE key_code) {
+    void handle_key_release(KeyCode key_code) {
         LOG("KeyRelease");
 
         if (is_space(key_code)) {
@@ -380,7 +445,7 @@ private:
         space_key_combo_ = space_down_;
     }
 
-    void process_event(BYTE event_type, BYTE key_code) {
+    void process_event(KeyCode event_type, KeyCode key_code) {
         switch (event_type) {
         case KeyPress:
         case KeyRelease:
@@ -419,8 +484,8 @@ private:
 
         const xEvent& event = *reinterpret_cast<xEvent*>(intercept_data->data);
         const auto& generic_event = event.u.u;
-        BYTE event_type = generic_event.type;
-        BYTE key_code = generic_event.detail;
+        KeyCode event_type = generic_event.type;
+        KeyCode key_code = generic_event.detail;
 
         auto self = reinterpret_cast<Space2Super*>(callback_closure);
         self->process_event(event_type, key_code);
@@ -434,6 +499,17 @@ private:
         XRecordFreeContext(control_display_.get(), record_context_);
     }
 };
+
+std::ostream& operator <<(std::ostream& stream, const Space2Super::KeyCodeSet& key_codes) {
+    const char* separator = "";
+    key_codes.map([&stream, &key_codes, &separator](KeyCode key_code) {
+        if (key_codes.contains(key_code)) {
+            stream << separator << static_cast<int>(key_code);
+            separator = " ";
+        }
+    });
+    return stream;
+}
 
 std::unique_ptr<Space2Super> instance;
 
@@ -450,21 +526,20 @@ void stop(int signal_number) {
 }
 
 int main(const int argc, const char* argv[]) {
-    if (argc != 5) {
+    if (argc != 3) {
         std::cerr << "Use `" << DRIVER << "` to start/stop Space2Super" << std::endl;
         return EXIT_FAILURE;
     }
 
-    BYTE original_super_key_code = static_cast<BYTE>(atoi(argv[1]));
-    BYTE original_space_key_code = static_cast<BYTE>(atoi(argv[2]));
-    BYTE remapped_key_code = static_cast<BYTE>(atoi(argv[3]));
-    int timeout = atoi(argv[4]);
+    KeyCode original_space_key_code = static_cast<KeyCode>(atoi(argv[1]));
+    int timeout = atoi(argv[2]);
 
+    signal(SIGHUP, SIG_IGN);
     signal(SIGINT, stop);
     signal(SIGTERM, stop);
 
     try {
-        Space2Super space2super(original_super_key_code, original_space_key_code, remapped_key_code, timeout);
+        Space2Super space2super(original_space_key_code, timeout);
         // Will loop until the destructor is called from `stop`.
         space2super.run();
     } catch (const Space2Super::InitializationError&) {

@@ -4,6 +4,11 @@ This little hack for X turns the spacebar key into another Super key when used i
 When used alone, it behaves like the ordinary space bar on the key release event.
 Especially useful with e.g. tiling window managers.
 
+So it is like [Space2Ctrl](https://github.com/r0adrunner/Space2Ctrl) from which it was forked
+but for the Space-to-Super case.
+Please also take note of [xcape](https://github.com/alols/xcape) which, when paired with `xmodmap`,
+can emulate both Space2Ctrl and Space2Super.
+
 
 ## Prerequisites:
 * Install the XTEST development package. On Debian GNU/Linux derivatives:
