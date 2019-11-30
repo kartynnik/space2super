@@ -12,6 +12,8 @@ SRC = $(PROG).cpp
 
 # These are only example arguments used for debugging (`debug` and `run`),
 # otherwise they are dynamically provided by `s2sctl`.
+# Please note that if the original Space key code is not remapped,
+# the synthesized events of pressing the same key may cause an infinite loop.
 # Original Space key code; timeout in milliseconds.
 DEFAULT_ARGS = 65 600
 
@@ -32,7 +34,7 @@ undeps:
 run: $(PROG)
 	./$(PROG) $(DEFAULT_ARGS)
 
-run_verbose: $(PROG)
+verbose: $(PROG)
 	./$(VERBOSE_PROG) $(DEFAULT_ARGS)
 
 debug: $(DEBUG_PROG)

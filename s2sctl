@@ -9,18 +9,28 @@ config="$config_dir/config"
 
 default_typed_space_timeout=500
 typed_space_timeout=$(
-    awk '$1 == "timeout" { print $2; }' "$config" 2> /dev/null ||
+    awk '$1 == "timeout_millisec" { print $2; }' "$config" 2> /dev/null ||
         echo "$default_typed_space_timeout")
 
 log_file="$config_dir/$program.log"
 original_xmodmap="$config_dir/xmodmap.original"
+xmodmap_changes="$config_dir/xmodmap.changes"
+
+quiet=false
 
 _log() {
-    echo "$@" >&2
+    be_quiet=$quiet
+    if [ "$1" = '--force' ]; then
+        be_quiet=false
+        shift
+    fi
+    if [ "$be_quiet" = false ]; then
+        echo "$@" >&2
+    fi
 }
 
 _die() {
-    _log "$@"
+    _log --force "$@"
     exit 1
 }
 
@@ -35,45 +45,57 @@ _check_command pgrep
 _check_command pkill
 _check_command xmodmap
 
-_print_keymap_expressions() {
-    # Instructs `xmodmap` to print out the current keymap table in the form it can consume.
-    xmodmap -pke
-}
-
-_program_running() {
-    pgrep --exact --count "$program" > /dev/null 2>&1
-}
-
 _signal() {
     _signal_id=$1
     pkill --exact "-$_signal_id" "$program"
 }
 
+_print_key_code_mappings() {
+    # Instructs `xmodmap` to print out the current keymap table in the form it can consume.
+    xmodmap -pke || _die 'Listing key code mappings failed.'
+}
+
+_print_space_key_mappings() {
+    _print_key_code_mappings | grep -w 'space' ||
+        _die 'Could not find any key code mappings of the Space key.'
+}
+
 _restore_original_key_code_mappings() {
-    xmodmap "$original_xmodmap" || _die "Restoring the original key code mappings failed."
+    xmodmap "$original_xmodmap" || _die 'Restoring the original key code mappings failed.'
+}
+
+is_running() {
+    pgrep --uid "$USER" --exact --count "$program" > /dev/null 2>&1
 }
 
 start() {
-    if _program_running; then
-        _die "Space2Super is already active. Use 's2sctl restart' to restart it."
+    if is_running; then
+        _log "Space2Super is already active. Use 's2sctl restart' to restart it."
+        exit 0
     fi
 
     _log 'Starting Space2Super...'
 
-    mkdir -p "$config_dir"
-    _print_keymap_expressions > "$original_xmodmap"
+    mkdir -p "$config_dir" || _die "Could not create Space2Super directory at '$config_dir'."
+
+    _print_space_key_mappings > "$original_xmodmap"
+
+    # An `xmodmap` mapping line looks like: `keycode 65 = space NoSymbol space NoSymbol space space`,
+    # where values on the right indicate the `KeySym`s relevant to different modifier combinations,
+    # the first indicating no modifiers.
 
     # Determine what the original Space key code was (most likely 65).
-    original_space_key_code=$(grep '\<space\>' "$original_xmodmap" | awk '{ print $2; exit; }')
+    original_space_key_code=$(awk '{ print $2; exit; }' "$original_xmodmap")
     if [ -z "$original_space_key_code" ]; then
         _die "Could not find any key code associated with Space (see 'xmodmap -pke')."
     fi
 
-    # Apply all the `xmodmap` modifications at once for performance reasons.
+    # All the `xmodmap` modifications should be applied at once for performance reasons.
     {
         # Change all mentions of `space` to `Super_L`.
         awk '/keycode / {
-            for (field = 1; field <= NF; ++field) {
+            # Start from after the `=` sign in `$3`.
+            for (field = 4; field <= NF; ++field) {
                 if ($field == "space")
                     $field = "Super_L";
             };
@@ -82,10 +104,17 @@ start() {
 
         # Map an unused key code to `space` when no modifiers are applied.
         echo "keycode any = space"
-    } | xmodmap - || {
+    } > "$xmodmap_changes" || _die 'Could not store the generated key code mapping changes.'
+
+    xmodmap "$xmodmap_changes" || {
         _restore_original_key_code_mappings
-        _die "Applying key code mappings failed."
+        _die "Applying key code mappings failed. You can check them in '$xmodmap_changes'."
     }
+
+    # Find out what `xmodmap` has chosen for the `any` above to be able to revert it to nothing.
+    # `$4` is the no-modifier `KeySym`, `$2` is the key code between `keycode` and `=`.
+    _print_space_key_mappings |
+        awk '$4 == "space" { print "keycode " $2 " ="; }' >> "$original_xmodmap"
 
     "$binary" "$original_space_key_code" "$typed_space_timeout" >> "$log_file" 2>&1 &
 
@@ -93,7 +122,7 @@ start() {
 }
 
 stop() {
-    if ! _program_running; then
+    if ! is_running; then
         _die 'Space2Super is not running.'
     fi
 
@@ -104,7 +133,7 @@ stop() {
     if _signal TERM; then
         # Signalled. Wait a bit and check if it's done.
         sleep 0.5
-        if _program_running; then
+        if is_running; then
             # Still alive.
             _signal KILL
             _die 'The program did not terminate gracefully, sent SIGKILL.'
@@ -112,7 +141,24 @@ stop() {
     fi
 }
 
+remap() {
+    is_running || return
+
+    xmodmap "$xmodmap_changes" || {
+        _restore_original_key_code_mappings
+        _die "Could not re-apply the key code mappings, you can check them in '$xmodmap_changes'."
+    }
+}
+
+if [ "$2" = '--quiet' ]; then
+    quiet=true
+fi
+
 case "$1" in
+    running)
+        # Exits with a zero code if Space2Super is running, non-zero otherwise.
+        is_running
+        ;;
     start)
         start
         ;;
@@ -120,10 +166,15 @@ case "$1" in
         stop
         ;;
     restart)
-        "$0" stop
-        "$0" start
+        is_running && stop
+        start
+        ;;
+    remap)
+        # Use to reconfigure XKB after external changes, like `setxkbmap`.
+        # Only applied if Space2Super is running.
+        remap
         ;;
     *)
-        _die "Usage: $0 {start|stop|restart}"
+        _die "Usage: $0 {start|stop|restart|running|remap}"
         ;;
 esac

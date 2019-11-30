@@ -33,5 +33,16 @@ make deps && make && cp space2super s2sctl $PREFIX/bin
 ```
 
 ## Usage:
-* Load Space2Super with "s2sctl start".
-* Unload Space2Super with "s2sctl stop".
+* Load Space2Super with `s2sctl start`.
+* Unload Space2Super with `s2sctl stop`.
+* **IMPORTANT**: Whenever your key code mappings are changed (e.g. by `setxkbmap`),
+    re-apply the Space2Super-specific changes with `s2sctl remap`
+    (otherwise your Space key will produce no effect, even while just typing).
+* You can check whether Space2Super is running by executing `s2sctl running`,
+    which exits a zero (success) code if Space2Super is active
+    (e.g. use `if s2sctl running` in scripts).
+* `s2sctl` also accepts a `--quiet` as a second argument which suppresses non-critical messages.
+* In `$XDG_CONFIG_HOME/space2super/config`, you can configure Space2Super typing timeout,
+    i.e. the amount of time that should pass between single Space press and release
+    in order for it to count as typing a space character, by adding a line `timeout_millisec NUMBER`
+    (`XDG_CONFIG_HOME` is `~/.config` by default).
